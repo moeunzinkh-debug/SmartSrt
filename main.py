@@ -2,6 +2,7 @@ import os
 import datetime
 import sys
 import types
+import re  # បន្ថែមសម្រាប់ប្រើ Regular Expression ដើម្បីលុបអត្ថបទក្នុងដង្កៀប
 from flask import Flask, render_template_string, request
 
 # បង្កើត module cgi ក្លែងក្លាយដើម្បីការពារ Error លើ Python 3.13 (Render)
@@ -38,16 +39,27 @@ def process_srt(content):
     current_index = 1
     for line in lines:
         clean_line = line.strip()
+        
+        # ១. ឆែកជួរម៉ោង
         if " --> " in clean_line:
             try:
                 s, e = clean_line.split(" --> ")
                 new_lines.append(f"{format_srt_time(get_seconds(s)-first_time)} --> {format_srt_time(get_seconds(e)-first_time)}")
             except: new_lines.append(line)
+            
+        # ២. ឆែកជួរលេខរៀង
         elif clean_line.isdigit():
             new_lines.append(str(current_index))
             current_index += 1
+            
+        # ៣. ឆែកជួរអត្ថបទ (លុបអត្ថបទក្នុងដង្កៀបជ្រុង [] ចេញ)
         else:
-            new_lines.append(line)
+            # លុបរាល់អត្ថបទដែលមានទម្រង់ [អ្វីមួយ]
+            processed_text = re.sub(r'\[.*?\]', '', line).strip()
+            # បើលុបហើយនៅសល់អក្សរ ទើបដាក់ចូល (ការពារកុំឱ្យសល់ជួរទទេច្រើនពេក)
+            if processed_text or not line.strip():
+                new_lines.append(processed_text)
+                
     return "\n".join(new_lines)
 
 HTML_TEMPLATE = """
@@ -115,8 +127,7 @@ HTML_TEMPLATE = """
 
     <script>
         function toggleT(e) {
-            e.preventDefault();
-            e.stopPropagation();
+            e.preventDefault(); e.stopPropagation();
             const b = document.body;
             const currentTheme = b.getAttribute('data-theme');
             b.setAttribute('data-theme', currentTheme === 'light' ? 'dark' : 'light');
@@ -137,16 +148,3 @@ HTML_TEMPLATE = """
     </script>
 </body>
 </html>
-"""
-
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    o, r = "", ""
-    if request.method == 'POST':
-        o = request.form.get('srt_text', '')
-        if o: r = process_srt(o)
-    return render_template_string(HTML_TEMPLATE, original=o, result=r)
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
